@@ -1,0 +1,66 @@
+FROM archlinux
+
+RUN pacman -Syyu --noconfirm
+RUN pacman -S --noconfirm \
+	usbutils \
+	android-tools \
+	git
+
+# set up workspace
+RUN mkdir /app
+WORKDIR /app
+
+# clone working forks of aasdk and openauto
+RUN git clone https://github.com/Demon000/aasdk.git
+RUN git clone https://github.com/Demon000/openauto.git
+
+# build aasdk
+WORKDIR /app/aasdk
+RUN pacman -S --noconfirm cmake base-devel git protobuf usbutils openssl boost
+RUN mkdir build
+WORKDIR /app/aasdk/build
+RUN cmake -DCMAKE_BUILD_TYPE=Release ..
+RUN make -j$(nproc)
+RUN make install
+
+# build openauto
+WORKDIR /app/openauto
+# TODO - actually look up what the RtAudio generic exception type is..
+RUN sed -i 's/RtError/std::exception/g' openauto/Projection/RtAudioOutput.cpp
+RUN pacman -S --noconfirm \
+	cmake \
+	base-devel \
+	git \
+	boost \
+	libusb \
+	openssl \
+	protobuf-c \
+	protobuf \
+	qt5-multimedia \
+	qt5-connectivity \
+	pulseaudio \
+	rtaudio \
+	qt5-declarative
+RUN mkdir build
+WORKDIR /app/openauto/build
+# TODO - possibly remove 'DBUILD_SHARED_LIBS=OFF'
+RUN cmake \
+	-DAASDK_INCLUDE_DIRS="../aasdk/include" \
+	-DAASDK_LIBRARIES="../aasdk/lib/libaasdk.so" \
+	-DAASDK_PROTO_INCLUDE_DIRS="../aasdk" \
+	-DBUILD_SHARED_LIBS=OFF  \ 
+	-DAASDK_PROTO_LIBRARIES="../aasdk/lib/libaasdk_proto.so" ..
+RUN make -j$(nproc)
+RUN make install
+
+# fix font issues
+RUN pacman -S --noconfirm ttf-dejavu ttf-liberation fontconfig
+RUN fc-cache -f -v
+
+# x11 and video drivers
+RUN pacman -S --noconfirm mesa-libgl libglvnd xorg-server-xvfb
+
+# sound utils
+RUN pacman -S --noconfirm alsa-utils alsa-plugins 
+
+CMD ["/usr/local/bin/autoapp"]
